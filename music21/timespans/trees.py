@@ -25,7 +25,7 @@ from music21 import common
 from music21 import exceptions21
 
 from music21.timespans import spans 
-from music21.timespans import node
+from music21.timespans import node as nodeModule
 
 from music21.exceptions21 import TimespanException
 from music21 import environment
@@ -42,7 +42,7 @@ class AVLTree(object):
         '__weakref__',
         'rootNode',
         )
-    nodeClass = node.AVLNode
+    nodeClass = nodeModule.AVLNode
     
     def __init__(
         self,
@@ -366,7 +366,7 @@ class ElementTree(AVLTree):
 
     '''
     ### CLASS VARIABLES ###
-    nodeClass = node.TimespanTreeNode
+    nodeClass = nodeModule.TimespanTreeNode
 
     __slots__ = (
         '_source',
@@ -378,6 +378,7 @@ class ElementTree(AVLTree):
     def __init__(self, elements=None, source=None):
         super(ElementTree, self).__init__()
         self._parents = weakref.WeakSet()
+        self._source = None
         if elements and elements is not None:
             self.insert(elements)
             

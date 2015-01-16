@@ -119,7 +119,6 @@ class CorpusReferenceReSTWriter(ReSTWriter):
         rst = '\n'.join(lines)
         self.write(corpusReferenceFilePath, rst)
 
-
 class IPythonNotebookReSTWriter(ReSTWriter):
     '''
     Converts IPython notebooks into ReST, and handles their associated image

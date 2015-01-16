@@ -1404,22 +1404,17 @@ class ModuleDocumenter(ObjectDocumenter):
     def referenceName(self):
         '''The short name of the module:
 
-        ::
+        >>> from music21 import documentation, serial
+        >>> module = serial
+        >>> documenter = documentation.ModuleDocumenter(module)
+        >>> documenter.referenceName
+        'moduleSerial'
 
-            >>> from music21 import documentation, serial
-            >>> module = serial
-            >>> documenter = documentation.ModuleDocumenter(module)
-            >>> documenter.referenceName
-            'moduleSerial'
-
-        ::
-
-            >>> from music21.stream import makeNotation
-            >>> module = makeNotation
-            >>> documenter = documentation.ModuleDocumenter(module)
-            >>> documenter.referenceName
-            'moduleStreamMakeNotation'
-
+        >>> from music21.stream import makeNotation
+        >>> module = makeNotation
+        >>> documenter = documentation.ModuleDocumenter(module)
+        >>> documenter.referenceName
+        'moduleStreamMakeNotation'
         '''
         referentPackagesystemPath = self.referentPackagesystemPath.replace(
             '.__init__', '')
@@ -1436,14 +1431,12 @@ class ModuleDocumenter(ObjectDocumenter):
 
 
 class CorpusDocumenter(Documenter):
-    '''A documenter for music21's corpus:
+    '''
+    A documenter for music21's corpus:
 
-    ::
-
-        >>> from music21 import documentation
-        >>> documenter = documentation.CorpusDocumenter()
-        >>> restructuredText = documenter.run()
-
+    >>> from music21 import documentation
+    >>> documenter = documentation.CorpusDocumenter()
+    >>> restructuredText = documenter.run()
     '''
 
     ### SPECIAL METHODS ###

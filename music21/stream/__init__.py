@@ -647,6 +647,10 @@ class Stream(base.Music21Object):
 
         # assign in new position
         self._elements[k] = value
+        #oldValue21 = self._elementTree[k]
+        
+        
+        
         value.activeSite = self
         # must get native offset
         value.sites.add(self, value.offset)
