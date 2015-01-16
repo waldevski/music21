@@ -474,8 +474,7 @@ class StreamFreezer(StreamFreezeThawBase):
             e.removeLocationBySite(streamObj)
 
         streamObj._storedElementOffsetTuples = storedElementOffsetTuples
-        streamObj._elementTree = None
-        streamObj._elements = []
+        streamObj._elements = None # was []
         streamObj._endElements = []
         streamObj._elementsChanged()
 
@@ -874,7 +873,7 @@ class StreamThawer(StreamFreezeThawBase):
         {5.0} <music21.bar.Barline style=regular>
         '''
         if hasattr(streamObj, '_storedElementOffsetTuples'):
-            streamObj._elementTree = ElementTree(source=streamObj)
+            streamObj._elements = ElementTree(source=streamObj)
             for e, offset in streamObj._storedElementOffsetTuples:
                 if offset != 'end':
                     streamObj._insertCore(offset, e)

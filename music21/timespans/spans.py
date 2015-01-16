@@ -362,7 +362,7 @@ class ElementTimespan(object):
     def quarterLength(self):
         '''
         TODO: Tests that show a case where this might be different from the quarterLength
-        of the element.
+        of the element, such as when an element has been split across two ElementTimespans
         '''
         return self.endTime - self.offset
 

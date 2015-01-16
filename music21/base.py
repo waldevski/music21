@@ -366,7 +366,7 @@ class Music21Object(object):
         if "sites" in keywords:
             self.sites = keywords["sites"]
         else:
-            self.sites = Sites(containedById=id(self))
+            self.sites = Sites(self)
             # set up a default location for self at zero
             # use None as the name of the site
             self.sites.add(None, 0.0)

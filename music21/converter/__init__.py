@@ -448,7 +448,8 @@ class Converter(object):
                 raise ConverterFileException('cannot find a format extensions for: %s' % fp)
         return useFormat
     
-    def parseFile(self, fp, number=None, format=None, forceSource=False, storePickle=True): # @ReservedAssignment
+    #def parseFile(self, fp, number=None, format=None, forceSource=False, storePickle=True): # @ReservedAssignment
+    def parseFile(self, fp, number=None, format=None, forceSource=True, storePickle=False): # @ReservedAssignment
         '''
         Given a file path, parse and store a music21 Stream.
 

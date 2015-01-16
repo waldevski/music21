@@ -11,6 +11,7 @@
 # Copyright:    Copyright © 2008-2014 Michael Scott Cuthbert and the music21 Project
 # License:      LGPL or BSD, see license.txt
 #------------------------------------------------------------------------------
+from music21.base import basestring
 '''
 The :class:`~music21.stream.Stream` and its subclasses,
 a subclass of the :class:`~music21.base.Music21Object`,
@@ -58,6 +59,14 @@ from music21 import environment
 _MOD = "stream.py"
 environLocal = environment.Environment(_MOD)
 
+INFINITY = float('inf')
+NEGATIVE_INFINITY = float('-inf')
+
+try:
+    basestring
+except NameError:
+    basestring = str
+
 #------------------------------------------------------------------------------
 # Metaclass
 _OffsetMap = collections.namedtuple('OffsetMap', ['element','offset', 'endTime', 'voiceIndex'])
@@ -65,8 +74,295 @@ _OffsetMap = collections.namedtuple('OffsetMap', ['element','offset', 'endTime',
 class StreamException(exceptions21.Music21Exception):
     pass
 
+class SitesException(exceptions21.Music21Exception):
+    pass
 
 #------------------------------------------------------------------------------
+
+class OLDSites(object):
+    def _getOffsetFloat(self):
+        if isinstance(self._offset, basestring):
+            return self._offset
+        elif self._offset is not None:
+            return float(self._offset)
+        else:
+            return None
+    
+    def _setOffset(self, offset):
+        '''
+        sets the offset and if necessary, translates it to a Fraction for exact representation.
+        '''
+        if offset is None:
+            self._offset = None
+        elif isinstance(offset, basestring):
+            self._offset = offset
+        else:
+            self._offset = common.opFrac(offset)
+            
+    def _getOffsetRational(self):
+        '''
+        returns the offset without conversion to float...
+        '''
+        return self._offset
+    
+    offset = property(_getOffsetRational, _setOffset)
+    offsetRational = property(_getOffsetRational, _setOffset)
+    offsetFloat = property(_getOffsetFloat, _setOffset, doc='''synonym for offset''')
+
+
+    def getOffsetBySite(self, siteObj, returnType='rational'):
+        '''
+        For a given site return this Sites's offset in it. The None site is
+        permitted. The id() of the site is used to find the offset.
+
+        >>> import music21
+        >>> class Mock(music21.Music21Object):
+        ...     pass
+        ...
+        >>> aSite = Mock()
+        >>> bSite = Mock()
+        >>> aLocations = music21.Sites()
+        >>> aLocations.add(aSite, 23)
+        >>> aLocations.add(bSite, 121.5)
+        >>> aLocations.getOffsetBySite(aSite)
+        23.0
+
+        >>> aLocations.getOffsetBySite(bSite)
+        121.5
+
+
+        The object might not actually be in the _elements for the site object, because
+        it may be a deep copy, etc. but the number is still returned.
+        '''
+        # NOTE: this is a performance critical operation
+        siteId = None
+        if siteObj is not None:
+            siteId = id(siteObj)
+        try:
+            # will raise a key error if not found
+            return self.getOffsetBySiteId(siteId, returnType=returnType)
+            #post = self.siteDict[siteId]['offset']
+        except SitesException: # the site id is not valid
+            #environLocal.printDebug(['getOffsetBySite: trying to get an offset by a site failed; self:', self, 'site:', site, 'defined contexts:', self.siteDict])
+            raise # re-raise Exception
+
+    def getOffsetBySiteId(self, idKey, strictDeadCheck=False, returnType='rational'):
+        '''
+        Main method for getting an offset from a location key.
+
+        >>> import music21
+        >>> class Mock(music21.Music21Object):
+        ...     pass
+        ...
+        >>> aSite = Mock()
+        >>> bSite = Mock()
+        >>> cSite = Mock()
+        >>> dSite = Mock()
+        >>> eSite = Mock()
+        >>> sitesObj = music21.Sites()
+        >>> sitesObj.add(aSite, 0)
+        >>> sitesObj.add(cSite) # a context
+        >>> sitesObj.add(bSite, 234) # can add at same offset or a different one
+        >>> sitesObj.add(dSite) # a context
+        >>> sitesObj.getOffsetBySiteId(id(bSite))
+        234.0
+
+        If strictDeadCheck is False (default) we can still retrieve the context
+        from a dead weakref.  This is necessary to get the offset from an
+        iterated Stream often.  Eventually, this should become True -- but too
+        many errors for now.
+
+        >>> idBSite = id(bSite)
+        >>> del(bSite)
+        >>> sitesObj.siteDict[idBSite].siteWeakref
+        <weakref at 0x...; dead>
+
+        >>> sitesObj.siteDict[idBSite].siteWeakref is None
+        False
+
+        >>> sitesObj.siteDict[idBSite].site is None
+        True
+
+        >>> sitesObj.getOffsetBySiteId(idBSite, strictDeadCheck = False) # default
+        234.0
+
+        With this, you'll get an exception:
+
+        >>> sitesObj.getOffsetBySiteId(idBSite, strictDeadCheck = True)
+        Traceback (most recent call last):
+        SitesException: Could not find the object with id ... in the Site marked with idKey ... (was there, now site is dead).
+        object <music21.sites.Sites object at 0x...>, sitesDict: {...}
+        containedById = ...
+
+        '''
+        # NOTE: this is a core method called very frequently
+#        if idKey == self._lastID:
+#            return self._lastOffset
+        try:
+            if returnType == 'float':
+                value = self.siteDict[idKey].offsetFloat
+            else:
+                value = self.siteDict[idKey].offset
+            
+            if strictDeadCheck is True and self.siteDict[idKey].siteWeakref is not None:
+                obj = self.siteDict[idKey].site
+                if obj is None:
+                    #if self.siteDict[idKey]['isDead'] is True: # not good enough
+                    errorMsg = "Could not find the object with id %s in the Site marked with idKey %s (was there, now site is dead). " % (id(self), idKey)
+                    errorMsg += "\n   object %r, sitesDict: %r" % (self, self.siteDict)
+                    errorMsg += "\n   containedById = %r" % (self.containedById)
+                    raise SitesException(errorMsg)
+
+        except KeyError:
+            errorMsg = "Could not find the object with id %s in the Site marked with idKey %s. " % (id(self), idKey)
+            errorMsg += "\n   object %r, sitesDict: %r" % (self, self.siteDict)
+            errorMsg += "\n   containedById = %d" % (self.containedById)
+            raise SitesException(errorMsg)
+        # stored string are assumed to be attributes of the stored object
+        if isinstance(value, str):
+            if value not in ['highestTime', 'lowestOffset', 'highestOffset']:
+                raise SitesException('attempted to set a bound offset with a string attribute that is not supported: %s' % value)
+            obj = self.siteDict[idKey].site
+            # offset value is an attribute string
+            # cannot cache these values as may change outside of siteDict
+            return getattr(obj, value)
+        # if value is not a string, it is a numerical offset
+        self._lastID = idKey
+        self._lastOffset = value
+        return value
+
+    def getOffsets(self, returnType='rational'):
+        '''
+        Return a list of all offsets.
+
+        ::
+
+            >>> import music21
+            >>> class Mock(music21.Music21Object):
+            ...     pass
+            ...
+            >>> aSite = Mock()
+            >>> bSite = Mock()
+            >>> cSite = Mock()
+            >>> dSite = Mock()
+            >>> sitesObj = music21.Sites()
+            >>> sitesObj.add(aSite, 0)
+            >>> sitesObj.add(cSite) # a context -- no offset
+            >>> sitesObj.add(bSite, 2.33333333333) # can add at same offset or another
+            >>> sitesObj.add(dSite) # a context -- no offset
+            >>> sitesObj.getOffsets()
+            [0.0, Fraction(7, 3)]
+            
+            Can call returnType = 'float' instead:
+            
+            >>> sitesObj.getOffsets(returnType='float')
+            [0.0, 2.3333...]
+        '''
+        # here, already having location keys may be an advantage
+        return [self.getOffsetBySiteId(x, returnType=returnType) for x in self._locationKeys]
+
+    def getSiteByOffset(self, offset):
+        '''
+        For a given offset return the site that fits it
+
+        More than one Site may have the same offset; this at one point returned
+        the last site added by sorting time, but now we use a dict, so there's
+        no guarantee that the one you want will be there -- need orderedDicts!
+
+        ::
+
+            >>> import fractions
+            >>> class Mock(base.Music21Object):
+            ...     pass
+            ...
+            >>> aSite = Mock()
+            >>> bSite = Mock()
+            >>> cSite = Mock()
+            >>> sitesObj = sites.Sites()
+            >>> sitesObj.add(aSite, 2)
+            >>> sitesObj.add(bSite, 10.0/3)
+            >>> aSite is sitesObj.getSiteByOffset(2)
+            True
+            >>> bSite is sitesObj.getSiteByOffset(fractions.Fraction(10, 3))
+            True
+            >>> bSite is sitesObj.getSiteByOffset(3.33333333333)
+            True
+
+        '''
+        match = None
+        offset = common.opFrac(offset)
+        for siteId in self.siteDict:
+            # might need to use almost equals here
+            matched = False
+            if self.siteDict[siteId].offsetRational == offset:
+                matched = True
+            if matched is True:
+                if self.siteDict[siteId].isDead:
+                    return None
+                match = self.siteDict[siteId].site
+                break
+        return match
+
+    def setOffsetBySite(self, site, value):
+        '''Changes the offset of the site specified.  Note that this can also
+        be done with add, but the difference is that if the site is not in
+        Sites, it will raise an exception.
+
+        ::
+
+            >>> import music21
+            >>> class Mock(music21.Music21Object):
+            ...     pass
+            ...
+            >>> aSite = Mock()
+            >>> bSite = Mock()
+            >>> cSite = Mock()
+            >>> aLocations = music21.Sites()
+            >>> aLocations.add(aSite, 23)
+            >>> aLocations.add(bSite, 121.5)
+            >>> aLocations.setOffsetBySite(aSite, 20)
+            >>> aLocations.getOffsetBySite(aSite)
+            20.0
+
+        ::
+
+            >>> aLocations.setOffsetBySite(cSite, 30)
+            Traceback (most recent call last):
+            SitesException: an entry for this object (<...Mock object at 0x...>) is not stored in Sites
+
+        '''
+        siteId = None
+        if site is not None:
+            siteId = id(site)
+        # will raise an index error if the siteId does not exist
+        try:
+            oldOffset = self.siteDict[siteId].offset
+            self.siteDict[siteId].offset = value
+            self._lastID = siteId
+            self._lastOffset = value
+            if site is not None:
+                streamObj = self.siteDict[siteId].siteRef.site
+                if streamObj is not None: # dead
+                    parent = common.unwrapWeakref(self._parent)
+                    streamObj.remove(parent, oldOffset)
+                    streamObj.insert(value, parent)
+        except KeyError:
+            raise SitesException('an entry for this object (%s) is not stored in Sites' % site)
+
+    def setOffsetBySiteId(self, siteId, value):
+        '''
+        Set an offset by siteId. This assumes that the site is valid, is best
+        used for advanced, performance critical usage only.
+
+        The `siteId` parameter can be None.
+        '''
+        try:
+            self.siteDict[siteId].offset = value
+            self._lastID = siteId
+            self._lastOffset = value
+        except KeyError:
+            raise SitesException('an entry for this object (%s) is not stored in Sites' % siteId)
+
 
 
 class StreamIterator(object):
@@ -288,8 +584,9 @@ class Stream(base.Music21Object):
 
         self.streamStatus = streamStatus.StreamStatus(self)
 
-        # self._elements stores Music21Object objects.
-        self._elements = []
+        # prior to version 2.1 self._elements stored Music21Object objects in
+        # a list.  Now it's an ElementTree
+        self._elements = timespans.trees.ElementTree(source=self)
 
         # self._endElements stores Music21Objects found at
         # the highestTime of this Stream.
@@ -301,7 +598,6 @@ class Stream(base.Music21Object):
 
         self._unlinkedDuration = None
 
-        self.isSorted = True
         self.autoSort = True
         self.isFlat = True  # does it have no embedded Streams
         self.definesExplicitSystemBreaks = False
@@ -321,9 +617,6 @@ class Stream(base.Music21Object):
 
         #self.analysisData = defaultdict(list)
         #self.analysisData['ResultDict'] = defaultdict(dict)
-
-        ### v2.1!
-        self._elementTree = timespans.trees.ElementTree(source=self)
 
         if givenElements is not None:
             # TODO: perhaps convert a single element into a list?
@@ -417,11 +710,6 @@ class Stream(base.Music21Object):
         >>> a['green'] == b
         True
         '''
-
-        # need to sort if not sorted, as this call may rely on index positions
-        if not self.isSorted and self.autoSort:
-            self.sort() # will set isSorted to True
-
         if common.isNum(k):
             match = None
             # handle easy and most common case first
@@ -521,10 +809,6 @@ class Stream(base.Music21Object):
         if self.activeSite is not None:
             self.activeSite._elementsChanged()
 
-        # clear these attributes for setting later
-        if clearIsSorted:
-            self.isSorted = False
-
         if updateIsFlat:
             self.isFlat = True
             # do not need to look in _endElements
@@ -551,12 +835,10 @@ class Stream(base.Music21Object):
         Combines the two storage lists, _elements and _endElements, such that
         they appear as a single list.
         '''
-        if not self.isSorted and self.autoSort:
-            self.sort() # will set isSorted to True
         if 'elements' not in self._cache or self._cache["elements"] is None:
             # this list concatenation may take time; thus, only do when
             # _elementsChanged has been called
-            self._cache["elements"] = self._elements + self._endElements
+            self._cache["elements"] = self._elements[:] + self._endElements
         return tuple(self._cache["elements"])
 
     def _setElements(self, value):
@@ -566,10 +848,10 @@ class Stream(base.Music21Object):
 
         Removing the elements from the current Stream seems necessary.
         '''
+        self._elements = timespans.trees.ElementTree(source=self)
         if (not common.isListLike(value) and hasattr(value, 'isStream') and
             value.isStream):
-            self._elements = list(value._elements)
-            for e in self._elements:
+            for e in value._elements:
                 e.sites.add(self, e.getOffsetBySite(value))
                 e.activeSite = self
             self._endElements = value._endElements
@@ -578,8 +860,7 @@ class Stream(base.Music21Object):
                 e.activeSite = self
         else:
             # replace the complete elements list
-            self._elements = list(value)
-            for e in self._elements:
+            for e in value:
                 e.sites.add(self, e.offset)
                 e.activeSite = self
         self._elementsChanged()
@@ -647,7 +928,6 @@ class Stream(base.Music21Object):
 
         # assign in new position
         self._elements[k] = value
-        #oldValue21 = self._elementTree[k]
         
         
         
@@ -910,9 +1190,8 @@ class Stream(base.Music21Object):
         >>> s.index(n1)
         0
         >>> s.index(n2)
-        1        '''
-        if not self.isSorted and self.autoSort:
-            self.sort() # will set isSorted to True
+        1        
+        '''
 
         if 'index' in self._cache and self._cache['index'] is not None:
             try:
@@ -942,7 +1221,7 @@ class Stream(base.Music21Object):
         raise StreamException('cannot find object (%s) in Stream' % obj)
 
 
-    def remove(self, targetOrList, firstMatchOnly=True, shiftOffsets = False): #, renumberMeasures = False):
+    def remove(self, targetOrList, shiftOffsets = False): #, renumberMeasures = False):
         '''
         Remove an object from this Stream. Additionally, this Stream is
         removed from the object's sites in :class:`~music21.base.Sites`.
@@ -998,91 +1277,22 @@ class Stream(base.Music21Object):
         {3.0} <music21.note.Note A>
 
         '''
-        if type(targetOrList) is list:
-            targetList = sorted(targetOrList, key=lambda target: target.getOffsetBySite(self))
-
-            if shiftOffsets:
-                shiftDur = 0.0
-            for i,target in enumerate(targetList):
-                try:
-                    indexInStream = self.index(target)
-                except StreamException:
-                    return # if not found, no error is raised
-                match = None
-                matchedEndElement = False
-                baseElementCount = len(self._elements)
-                if indexInStream < baseElementCount:
-                    match = self._elements.pop(indexInStream)
-                else:
-                    match = self._endElements.pop(indexInStream-baseElementCount)
-                    matchedEndElement = True
-
-                if match is not None:
-                    if shiftOffsets is True:
-                        matchOffset = match.getOffsetBySite(self)
-
-                    self._elementsChanged(clearIsSorted=False)
-                    match.removeLocationBySite(self)
-
-                if shiftOffsets is True and matchedEndElement is False:
-                    matchDuration = match.duration.quarterLength
-                    shiftedRegionStart = matchOffset + matchDuration
-                    if i+1 < len(targetList):
-                        shiftedRegionEnd = targetList[i+1].getOffsetBySite(self)
-                    else:
-                        shiftedRegionEnd = self.duration.quarterLength
-
-                    shiftDur = shiftDur + matchDuration
-                    if shiftDur != 0.0:
-                        for e in self.getElementsByOffset(shiftedRegionStart,
-                            shiftedRegionEnd,
-                            includeEndBoundary = False,
-                            mustFinishInSpan = False,
-                            mustBeginInSpan = True):
-
-                            elementOffset = e.getOffsetBySite(self)
-                            e.setOffsetBySite(self, elementOffset-shiftDur)
-                #if renumberMeasures is True and matchedEndElement is False:
-                #   pass  # This should maybe just call a function renumberMeasures
+        if common.isListLike(targetOrList):
+            targets = targetOrList
         else:
-            target = targetOrList
-            try:
-                i = self.index(target)
-            except StreamException:
-                return # if not found, no error is raised
-            match = None
-            matchedEndElement = False
-            baseElementCount = len(self._elements)
-            if i < baseElementCount:
-                match = self._elements.pop(i)
-            else: # its in end elements
-                match = self._endElements.pop(i-baseElementCount)
-                matchedEndElement = True
-
-            if match is not None:
-                if shiftOffsets is True:
-                    matchOffset = match.getOffsetBySite(self)
-                # removing an object will never change the sort status
-                self._elementsChanged(clearIsSorted=False)
-                match.removeLocationBySite(self)
-
-                if shiftOffsets is True and matchedEndElement is False: #shift all elements after the deletion point
-                    shiftDur = match.duration.quarterLength
-                    if shiftDur != 0.0:
-                        for e in self._elements:
-                            elementOffset = e.getOffsetBySite(self)
-                            if elementOffset < matchOffset+shiftDur: #shift only elements after the deleted section
-                                continue
-                            e.setOffsetBySite(self, elementOffset-shiftDur)
-                # if renumberMeasures is True and matchedEndElement is False and type(match):
-                #    pass  #This should just call a function renumberMeasures
+            targets = [targetOrList]
+        
+        offsets = []
+        for t in targets:
+            offsets.append(t.getOffsetBySite(self))
+        
+        self._elements.remove(targets, offsets, shiftOffsets=shiftOffsets)
 
     def pop(self, index):
         '''
         Return and remove the object found at the
         user-specified index value. Index values are
-        those found in `elements` and are not necessary offset order.
-
+        those found in `elements` and are in order.
 
         >>> a = stream.Stream()
         >>> a.repeatInsert(note.Note("C"), list(range(10)))
@@ -1093,11 +1303,12 @@ class Stream(base.Music21Object):
         eLen = len(self._elements)
         # if less then base length, its in _elements
         if index < eLen:
-            post = self._elements.pop(index)
+            post = self._elements[eLen]
+            self._elements.remove(post, post.getOffsetBySite(self))
         else: # its in the _endElements
             post = self._endElements.pop(index - eLen)
 
-        self._elementsChanged(clearIsSorted=False)
+        self._elementsChanged()
         # remove self from locations here only if
         # there are no further locations
         post.removeLocationBySite(self)
@@ -1130,11 +1341,8 @@ class Stream(base.Music21Object):
         #for i, e in enumerate(self._elements):
         for e in self._elements:
             if e.isClassOrSubclass(classFilterList):
-                indexList.append(count)
-            count += 1
-        for i in reversed(indexList):
-            post = self._elements.pop(i)
-            post.removeLocationBySite(self)
+                self._elements.remove(e, e.getOffsetBySite(self))
+                e.removeLocationBySite(self)
 
         # process end elements
         indexList = []
@@ -1246,13 +1454,10 @@ class Stream(base.Music21Object):
                     # this will work for all with __deepcopy___
                     # get the old offset from the activeSite Stream
                     # user here to provide new offset
-                    #new.insert(e.getOffsetBySite(old), newElement,
-                    #           ignoreSort=True)
+                    #new.insert(e.getOffsetBySite(old), newElement)
                     offset = e.getOffsetBySite(old)
                     newElement = copy.deepcopy(e, memo)
-                    new._insertCore(offset,
-                                newElement,
-                                ignoreSort=True)
+                    new._insertCore(offset, newElement)
             elif name == '_endElements':
                 # must manually add elements to
                 for e in self._endElements:
@@ -1368,8 +1573,7 @@ class Stream(base.Music21Object):
         element.purgeLocations()
 
 
-    def _insertCore(self, offset, element, ignoreSort=False,
-        setActiveSite=True):
+    def _insertCore(self, offset, element, setActiveSite=True):
         '''
         A faster way of inserting elements that does no checks,
         just insertion.
@@ -1386,47 +1590,18 @@ class Stream(base.Music21Object):
         '''
         #environLocal.printDebug(['_insertCore', 'self', self, 'offset', offset, 'element', element])
         # need to compare highest time before inserting the element in
-        # the elements list
-        storeSorted = False
-        if not ignoreSort:
-            # if sorted and our insertion is > the highest time, then
-            # are still inserted
-#            if self.isSorted is True and self.highestTime <= offset:
-#                storeSorted = True
-            if self.isSorted is True: 
-                ht = self.highestTime
-                if ht < offset:
-                    storeSorted = True
-                elif ht == offset:
-                    if len(self._elements) == 0:
-                        storeSorted = True
-                    else:
-                        highestSortTuple = self._elements[-1].sortTuple()
-                        thisSortTuple = list(element.sortTuple())
-                        thisSortTuple[1] = offset
-                        thisSortTuple = tuple(thisSortTuple)
-                        
-                        if highestSortTuple < thisSortTuple:
-                            storeSorted = True
-                    
+        # the elements list                    
         element.sites.add(self, float(offset))
         # need to explicitly set the activeSite of the element
         if setActiveSite:
             element.activeSite = self
         # will be sorted later if necessary
-        self._elements.append(element)
-        self._elementTree.insert(float(offset), element)
-        return storeSorted
+        self._elements.insert(float(offset), element)
 
 
-    def insert(self, offsetOrItemOrList, itemOrNone=None,
-                     ignoreSort=False, setActiveSite=True):
+    def insert(self, offsetOrItemOrList, itemOrNone=None, setActiveSite=True):
         '''
         Inserts an item(s) at the given offset(s).
-
-        If `ignoreSort` is True then the inserting does not
-        change whether the Stream is sorted or not (much faster if you're going to be inserting dozens
-        of items that don't change the sort status)
 
         The `setActiveSite` parameter should nearly always be True; only for
         advanced Stream manipulation would you not change
@@ -1476,7 +1651,7 @@ class Stream(base.Music21Object):
         '''
         #environLocal.printDebug(['self', self, 'offsetOrItemOrList',
         #            offsetOrItemOrList, 'itemOrNone', itemOrNone,
-        #             'ignoreSort', ignoreSort, 'setActiveSite', setActiveSite])
+        #             'setActiveSite', setActiveSite])
         # normal approach: provide offset and item
         if itemOrNone is not None:
             offset = offsetOrItemOrList
@@ -1487,7 +1662,7 @@ class Stream(base.Music21Object):
                 offset = offsetOrItemOrList[i]
                 item = offsetOrItemOrList[i+1]
                 # recursively calling insert() here
-                self.insert(offset, item, ignoreSort=ignoreSort)
+                self.insert(offset, item)
                 i += 2
             return
         # assume first arg is item, and that offset is local offset of object
@@ -1519,14 +1694,11 @@ class Stream(base.Music21Object):
         self._addElementPreProcess(element)
         # main insert procedure here
         
-        storeSorted = self._insertCore(offset, element,
-                     ignoreSort=ignoreSort, setActiveSite=setActiveSite)
+        self._insertCore(offset, element, setActiveSite=setActiveSite)
         updateIsFlat = False
         if element.isStream:
             updateIsFlat = True
         self._elementsChanged(updateIsFlat=updateIsFlat)
-        if ignoreSort is False:
-            self.isSorted = storeSorted
 
 
     def _appendCore(self, element):
@@ -1544,13 +1716,6 @@ class Stream(base.Music21Object):
         element.activeSite = self
         self._elements.append(element)
         
-        # Make this faster
-        self._elementTree.insert(self.highestTime, element)
-        # does not change sorted state
-        if element.duration is not None:
-            self._setHighestTime(self.highestTime +
-                element.duration.quarterLength)
-
     def insertIntoNoteOrChord(self, offset, noteOrChord, chordsOnly = False):
         '''
         Insert a Note or Chord into an offset position in this Stream.
@@ -1668,7 +1833,7 @@ class Stream(base.Music21Object):
         if removeTarget is not None:
             self.remove(removeTarget)
         # insert normally, nothing to handle
-        self.insert(offset, finalTarget, ignoreSort=False, setActiveSite=True)
+        self.insert(offset, finalTarget, setActiveSite=True)
 
 
     def append(self, others):
@@ -1752,12 +1917,8 @@ class Stream(base.Music21Object):
                 #environLocal.printDebug(['incrementing highest time', 'e.duration.quarterLength', e.duration.quarterLength])
                 highestTime += e.duration.quarterLength
 
-        # does not change sorted state
-        storeSorted = self.isSorted
         # we cannot keep the index cache here b/c we might
         self._elementsChanged(updateIsFlat=updateIsFlat)
-        self.isSorted = storeSorted
-        self._setHighestTime(highestTime) # call after to store in cache
 
 
     def _storeAtEndCore(self, element):
@@ -1932,11 +2093,7 @@ class Stream(base.Music21Object):
         else: # using native offset
             #if hasattr(offsetOrItemOrList, 'duration'):
             insertObject = offsetOrItemOrList
-            if insertObject.duration is not None:
-                qL = insertObject.duration.quarterLength
-            else:
-                qL = 0.0
-            # should this be getOffsetBySite(None)?
+            qL = insertObject.quarterLength
             highestTimeInsert = insertObject.offset + qL
             lowestOffsetInsert = insertObject.offset
 
@@ -1960,6 +2117,7 @@ class Stream(base.Music21Object):
             if lowestGap is None or gap < lowestGap:
                 lowestGap = gap
                 lowestElementToShift = e
+                break
 
         if lowestElementToShift is not None:
             lowestOffsetToShift = lowestElementToShift.getOffsetBySite(self)
@@ -2026,7 +2184,7 @@ class Stream(base.Music21Object):
         updateIsFlat = False
         if replacement.isStream:
             updateIsFlat = True
-        # elements have changed: sort order may change b/c have diff classes
+        # elements have changed
         self._elementsChanged(updateIsFlat=updateIsFlat)
 
         if allTargetSites:
@@ -2467,8 +2625,6 @@ class Stream(base.Music21Object):
         if returnList is False:
             found.derivation.origin = self
             found.derivation.method = 'getElementsByClass'
-            # passing on auto sort status may or may not be what is needed here
-            found.autoSort = self.autoSort
 
         # much faster in the most common case than calling common.isListLike
         if not isinstance(classFilterList, (list, tuple)):
@@ -2481,15 +2637,7 @@ class Stream(base.Music21Object):
             singleClassString = True
         if singleClassString:
             if not self.hasElementOfClass(classFilterList[0]):
-                found.isSorted = self.isSorted
                 return found
-
-        if ((self.isSorted is False) and (self.autoSort is True)):
-            self.sort() # will set isSorted to True
-        # if this stream was sorted, the resultant stream is sorted
-        if returnList is False:
-            found.isSorted = self.isSorted
-
 
         #found.show('t')
         # need both _elements and _endElements
@@ -2497,7 +2645,7 @@ class Stream(base.Music21Object):
             #eClasses = e.classes  # store once, as this is property call
             if e.isClassOrSubclass(classFilterList):
                 if returnList is False:
-                    found._insertCore(e.getOffsetBySite(self), e, ignoreSort=True)
+                    found._insertCore(e.getOffsetBySite(self), e)
                 else:
                     found.append(e)
         for e in self._endElements:
@@ -2561,14 +2709,13 @@ class Stream(base.Music21Object):
         # need both _elements and _endElements
         for e in self._elements:
             if not e.isClassOrSubclass(classFilterList):
-                found._insertCore(e.getOffsetBySite(self), e, ignoreSort=True)
+                found._insertCore(e.getOffsetBySite(self), e)
         for e in self._endElements:
             if not e.isClassOrSubclass(classFilterList):
                 found._storeAtEndCore(e)
 
         # if this stream was sorted, the resultant stream is sorted
-        found._elementsChanged(clearIsSorted=False)
-        found.isSorted = self.isSorted
+        found._elementsChanged()
         return found
 
     def getElementsByGroup(self, groupFilterList):
@@ -2612,16 +2759,13 @@ class Stream(base.Music21Object):
         for e in self._elements:
             for g in groupFilterList:
                 if hasattr(e, "groups") and g in e.groups:
-                    returnStream._insertCore(e.getOffsetBySite(self),
-                                        e, ignoreSort=True)
+                    returnStream._insertCore(e.getOffsetBySite(self), e)
         for e in self._endElements:
             for g in groupFilterList:
                 if hasattr(e, "groups") and g in e.groups:
-                    #returnStream.storeAtEnd(e, ignoreSort=True)
                     returnStream._storeAtEndCore(e)
 
         returnStream._elementsChanged(clearIsSorted=False)
-        returnStream.isSorted = self.isSorted
         return returnStream
 
 ### probably not needed...
@@ -3000,12 +3144,7 @@ class Stream(base.Music21Object):
             #offset = common.cleanupFloat(offset)
 
             if offset > offsetEnd:  # anything that ends after the span is definitely out
-                if self.isSorted:
-                    # if sorted, optimize by breaking after exceeding offsetEnd
-                    # eventually we could do a binary search to speed up...
-                    break
-                else:
-                    continue
+                break
 
             elementEnd = opFrac(offset + dur.quarterLength)
             if dur.quarterLength == 0:
@@ -3341,8 +3480,7 @@ class Stream(base.Music21Object):
         Returns a List of lists in which each entry in the
         main list is a list of elements occurring at the same time.
         list is ordered by offset (since we need to sort the list
-        anyhow in order to group the elements), so there is
-        no need to call stream.sorted before running this.
+        anyhow in order to group the elements).
 
         if returnDict is True then it returns a dictionary of offsets
         and everything at that offset.  If returnDict is False (default)
@@ -5198,7 +5336,6 @@ class Stream(base.Music21Object):
             transferGroupsToPitches = True
 
         returnObj = copy.deepcopy(self)
-        returnObj.isSorted = False # this makes all the difference in the world for some reason...
         if returnObj.hasPartLikeStreams():
             allParts = returnObj.getElementsByClass('Stream')
         else: # simulate a list of Streams
@@ -5617,7 +5754,7 @@ class Stream(base.Music21Object):
 
         # need to move through notes in order
         # NOTE: this may or may have sub-streams that are not being examined
-        noteStream = returnObj.sorted.notesAndRests
+        noteStream = returnObj.notesAndRests
 
         #environLocal.printDebug(['alteredPitches', alteredPitches])
         #environLocal.printDebug(['pitchPast', pitchPast])
@@ -5836,10 +5973,6 @@ class Stream(base.Music21Object):
             returnObj = copy.deepcopy(self)
         else:
             returnObj = self
-
-        # Should we do this?  or just return an exception if not there.
-        # this cannot work unless we use a sorted representation
-        returnObj = returnObj.sorted
 
         qLenTotal = returnObj.duration.quarterLength
         elements = []
@@ -6158,168 +6291,6 @@ class Stream(base.Music21Object):
 
     #---------------------------------------------------------------------------
 
-    def sort(self, force=False):
-        '''
-        Sort this Stream in place by offset, then priority, then
-        standard class sort order (e.g., Clefs before KeySignatures before
-        TimeSignatures).
-
-        Note that Streams automatically sort themsevlves unless
-        autoSort is set to False (as in the example below)
-
-        If `force` is True, a sort will be attempted regardless of any other parameters.
-
-
-        >>> n1 = note.Note('a')
-        >>> n2 = note.Note('b')
-        >>> s = stream.Stream()
-        >>> s.autoSort = False
-        >>> s.insert(100, n2)
-        >>> s.insert(0, n1) # now a has a lower offset by higher index
-        >>> [n.name for n in s]
-        ['B', 'A']
-        >>> s.sort()
-        >>> [n.name for n in s]
-        ['A', 'B']
-        '''
-        # trust if this is sorted: do not sort again
-        # experimental
-        if (not self.isSorted and self._mutable) or force:
-            #environLocal.printDebug(['sorting _elements, _endElements'])
-#             self._elements.sort(
-#                 cmp=lambda x, y: cmp(
-#                     x.getOffsetBySite(self), y.getOffsetBySite(self))
-#                     or cmp(x.priority, y.priority)
-#                     or cmp(x.classSortOrder, y.classSortOrder)
-#                     or cmp(not x.isGrace, not y.isGrace) # sort graces first
-#                     #or cmp(random.randint(1,30), random.randint(1,30))
-#                 )
-#             self._endElements.sort(
-#                 cmp=lambda x, y: cmp(x.priority, y.priority) or
-#                     cmp(x.classSortOrder, y.classSortOrder)
-#                 )
-            self._elements.sort(key=lambda x: x.sortTuple(self))
-            self._endElements.sort(key=lambda x: x.sortTuple(self))
-
-            # as sorting changes order, elements have changed;
-            # need to clear cache, but flat status is the same
-            self._elementsChanged(updateIsFlat=False, clearIsSorted=False)
-            self.isSorted = True
-            #environLocal.printDebug(['_elements', self._elements])
-
-    def _getSorted(self):
-        if 'sorted' not in self._cache or self._cache['sorted'] is None:
-            shallowElements = copy.copy(self._elements) # already a copy
-            shallowEndElements = copy.copy(self._endElements) # already a copy
-            s = copy.copy(self)
-            # assign directly to _elements, as we do not need to call
-            # _elementsChanged()
-            s._elements = shallowElements
-            s._endElements = shallowEndElements
-
-            for e in shallowElements + shallowEndElements:
-                e.sites.add(s, e.getOffsetBySite(self))
-                # need to explicitly set activeSite
-                e.activeSite = s
-            # now just sort this stream in place; this will update the
-            # isSorted attribute and sort only if not already sorted
-            s.sort()
-            self._cache['sorted'] = s
-        return self._cache['sorted']
-
-        # get a shallow copy of elements list
-#         shallowElements = copy.copy(self._elements) # already a copy
-#         shallowEndElements = copy.copy(self._endElements) # already a copy
-#         newStream = copy.copy(self)
-#         # assign directly to _elements, as we do not need to call
-#         # _elementsChanged()
-#         newStream._elements = shallowElements
-#         newStream._endElements = shallowEndElements
-#
-#         for e in shallowElements + shallowEndElements:
-#             e.sites.add(newStream, e.getOffsetBySite(self))
-#             # need to explicitly set activeSite
-#             e.activeSite = newStream
-#         # now just sort this stream in place; this will update the
-#         # isSorted attribute and sort only if not already sorted
-#         newStream.sort()
-#         return newStream
-
-    sorted = property(_getSorted, doc='''
-        Returns a new Stream where all the elements are sorted according to offset time, then
-        priority, then classSortOrder (so that, for instance, a Clef at offset 0 appears before
-        a Note at offset 0)
-
-        if this Stream is not flat, then only the highest elements are sorted.  To sort all,
-        run myStream.flat.sorted
-
-        For instance, here is an unsorted Stream
-
-
-        >>> s = stream.Stream()
-        >>> s.autoSort = False # if true, sorting is automatic
-        >>> s.insert(1, note.Note("D"))
-        >>> s.insert(0, note.Note("C"))
-        >>> s.show('text')
-        {1.0} <music21.note.Note D>
-        {0.0} <music21.note.Note C>
-
-
-        But a sorted version of the Stream puts the C first:
-
-
-        >>> s.sorted.show('text')
-        {0.0} <music21.note.Note C>
-        {1.0} <music21.note.Note D>
-
-
-        While the original stream remains unsorted:
-
-
-        >>> s.show('text')
-        {1.0} <music21.note.Note D>
-        {0.0} <music21.note.Note C>
-
-
-        OMIT_FROM_DOCS
-        >>> s = stream.Stream()
-        >>> s.autoSort = False
-        >>> s.repeatInsert(note.Note("C#"), [0, 2, 4])
-        >>> s.repeatInsert(note.Note("D-"), [1, 3, 5])
-        >>> s.isSorted
-        False
-        >>> g = ""
-        >>> for myElement in s:
-        ...    g += "%s: %s; " % (myElement.offset, myElement.name)
-        >>> g
-        '0.0: C#; 2.0: C#; 4.0: C#; 1.0: D-; 3.0: D-; 5.0: D-; '
-        >>> y = s.sorted
-        >>> y.isSorted
-        True
-        >>> g = ""
-        >>> for myElement in y:
-        ...    g += "%s: %s; " % (myElement.offset, myElement.name)
-        >>> g
-        '0.0: C#; 1.0: D-; 2.0: C#; 3.0: D-; 4.0: C#; 5.0: D-; '
-        >>> farRight = note.Note("E")
-        >>> farRight.priority = 5
-        >>> farRight.offset = 2.0
-        >>> y.insert(farRight)
-        >>> g = ""
-        >>> for myElement in y:
-        ...    g += "%s: %s; " % (myElement.offset, myElement.name)
-        >>> g
-        '0.0: C#; 1.0: D-; 2.0: C#; 3.0: D-; 4.0: C#; 5.0: D-; 2.0: E; '
-        >>> z = y.sorted
-        >>> g = ""
-        >>> for myElement in z:
-        ...    g += "%s: %s; " % (myElement.offset, myElement.name)
-        >>> g
-        '0.0: C#; 1.0: D-; 2.0: C#; 2.0: E; 3.0: D-; 4.0: C#; 5.0: D-; '
-        >>> z[2].name, z[3].name
-        ('C#', 'E')
-
-        ''')
 
 
     def _getFlatOrSemiFlat(self, retainContainers=False):
@@ -6343,7 +6314,7 @@ class Stream(base.Music21Object):
         # storing .elements in here necessitates
         # create a new, independent cache instance in the flat representation
         sNew._cache = {} 
-        sNew._elements = []
+        sNew._elements = timespans.trees.ElementTree(source=sNew)
         sNew._endElements = []
         sNew._elementsChanged()
 
@@ -6421,7 +6392,7 @@ class Stream(base.Music21Object):
         sNew.derivation.method = 'flat'
         # create a new, independent cache instance in the flat representation
         sNew._cache = {}
-        sNew._elements = []
+        sNew._elements = timespans.trees.ElementTree(source=sNew)
         sNew._endElements = []
         sNew._elementsChanged() # clear caches
         for e in self._elements:
@@ -6521,39 +6492,6 @@ class Stream(base.Music21Object):
         >>> bwv66flat = bwv66.flat
         >>> len(bwv66flat.notes)
         165
-
-        If you look back to our simple example of four notes above,
-        you can see that the E (the first note in part2) comes before the D
-        (the second note of part1).  This is because the flat stream
-        is automatically sorted like all streams are by default.  The
-        next example shows how to change this behavior.
-
-        >>> s = stream.Stream()
-        >>> s.autoSort = False
-        >>> s.repeatInsert(note.Note("C#"), [0, 2, 4])
-        >>> s.repeatInsert(note.Note("D-"), [1, 3, 5])
-        >>> s.isSorted
-        False
-
-        >>> g = ""
-        >>> for myElement in s:
-        ...    g += "%s: %s; " % (myElement.offset, myElement.name)
-        ...
-
-        >>> g
-        '0.0: C#; 2.0: C#; 4.0: C#; 1.0: D-; 3.0: D-; 5.0: D-; '
-
-        >>> y = s.sorted
-        >>> y.isSorted
-        True
-
-        >>> g = ""
-        >>> for myElement in y:
-        ...    g += "%s: %s; " % (myElement.offset, myElement.name)
-        ...
-
-        >>> g
-        '0.0: C#; 1.0: D-; 2.0: C#; 3.0: D-; 4.0: C#; 5.0: D-; '
 
         >>> q = stream.Stream()
         >>> for i in range(5):
@@ -6828,7 +6766,6 @@ class Stream(base.Music21Object):
         Clean this Stream: for self and all elements, purge all dead locations
         and remove all non-contained sites. Further, restore all active sites.
         '''
-        self.sort() # must sort before making immutable
         self._mutable = False
         for e in self._yieldElementsDownward(streamsOnly=False,
             restoreActiveSites=True):
@@ -6837,7 +6774,6 @@ class Stream(base.Music21Object):
             # sites from locations when a Note was both in a Stream and in
             # an Interval
             if e.isStream:
-                e.sort() # sort before making immutable
                 e._mutable = False
 
     def makeMutable(self, recurse=True):
@@ -6854,31 +6790,16 @@ class Stream(base.Music21Object):
 
     def _getHighestOffset(self):
         '''
-
         >>> p = stream.Stream()
         >>> p.repeatInsert(note.Note("C"), [0, 1, 2, 3, 4])
         >>> p.highestOffset
         4.0
         '''
-        if 'HighestOffset' in self._cache and self._cache["HighestOffset"] is not None:
-            pass  # return cache unaltered
-        elif len(self._elements) == 0:
-            self._cache["HighestOffset"] = 0.0
-        elif self.isSorted is True:
-            eLast = self._elements[-1]
-            self._cache["HighestOffset"] = eLast.getOffsetBySite(self)
-        else: # iterate through all elements
-            highestOffsetSoFar = None
-            for e in self._elements:
-                candidateOffset = e.getOffsetBySite(self)
-                if highestOffsetSoFar is None or candidateOffset > highestOffsetSoFar:
-                    highestOffsetSoFar = candidateOffset
-            
-            if highestOffsetSoFar is not None:
-                self._cache["HighestOffset"] = float(highestOffsetSoFar)
-            else:
-                self._cache["HighestOffset"] = None
-        return self._cache["HighestOffset"]
+        highestOffset = self._elements.highestOffset
+        if highestOffset == INFINITY:
+            return 0.0
+        else:
+            return highestOffset
 
     highestOffset = property(_getHighestOffset,
         doc='''Get start time of element with the highest offset in the Stream.
@@ -6896,11 +6817,6 @@ class Stream(base.Music21Object):
         >>> stream1.highestTime
         12.0
         ''')
-
-    def _setHighestTime(self, value):
-        '''For internal use only.
-        '''
-        self._cache["HighestTime"] = value
 
     def _getHighestTime(self):
         '''
@@ -6920,41 +6836,11 @@ class Stream(base.Music21Object):
         >>> q.highestTime # this works b/c the component Stream has an duration
         47.0
         >>> r = q.flat
-
-        OMIT_FROM_DOCS
-
-        Make sure that the cache really is empty
-        >>> 'HighestTime' in r._cache
-        False
-        >>> r.highestTime # 44 + 3
-        47.0
         '''
-#         environLocal.printDebug(['_getHighestTime', 'isSorted', self.isSorted, self])
-        # remove cache -- durations might change...
-        if 'HighestTime' in self._cache and self._cache["HighestTime"] is not None:
-            pass  # return cache unaltered
-        elif len(self._elements) == 0:
-        #if len(self._elements) == 0:
-            self._cache["HighestTime"] = 0.0
-            return 0.0
-        else:
-            highestTimeSoFar = Fraction(0, 1)
-            # TODO: optimize for a faster way of doing this.
-            # but cannot simply look at the last element because what if the penultimate element, with a
-            # lower offset has a longer duration than the last?
-            # Take the case where a whole note appears a 0.0, but a textExpression (ql=0) at 0.25 --
-            # isSorted would be true, but highestTime should be 4.0 not 0.25
-            for e in self._elements:
-                try:
-                    candidateOffset = (e.getOffsetBySite(self) +
-                                   e.duration.quarterLength)
-                except:
-                    #print(self, e, id(e), e.offset, e.getSites())
-                    raise
-                if candidateOffset > highestTimeSoFar:
-                    highestTimeSoFar = candidateOffset
-            self._cache["HighestTime"] = float(highestTimeSoFar)
-        return self._cache["HighestTime"]
+        highestTime = self._elements.endTime
+        if highestTime == INFINITY:
+            highestTime = 0.0
+        return highestTime
 
     highestTime = property(_getHighestTime, doc='''
         Returns the maximum of all Element offsets plus their Duration
@@ -6996,9 +6882,6 @@ class Stream(base.Music21Object):
 
     def _getLowestOffset(self):
         '''
-
-
-
         >>> p = stream.Stream()
         >>> p.repeatInsert(note.Note('D5'), [0, 1, 2, 3, 4])
         >>> q = stream.Stream()
@@ -7014,30 +6897,14 @@ class Stream(base.Music21Object):
         >>> r.lowestOffset
         97.0
         '''
-        if 'lowestOffset' in self._cache and self._cache["LowestOffset"] is not None:
-            pass  # return cache unaltered
-        elif len(self._elements) == 0:
-            self._cache["LowestOffset"] = 0.0
-        elif self.isSorted is True:
-            eFirst = self._elements[0]
-            self._cache["LowestOffset"] = eFirst.getOffsetBySite(self)
-        else: # iterate through all elements
-            minOffsetSoFar = None
-            for e in self._elements:
-                candidateOffset = e.getOffsetBySite(self)
-                if minOffsetSoFar is None or candidateOffset < minOffsetSoFar:
-                    minOffsetSoFar = candidateOffset
-            self._cache["LowestOffset"] = minOffsetSoFar
-
-            #environLocal.printDebug(['_getLowestOffset: iterated elements', min])
-
-        return self._cache["LowestOffset"]
-
-
+        lowestOffset = self._elements.lowestOffset
+        if lowestOffset == NEGATIVE_INFINITY:
+            lowestOffset = 0.0
+        return lowestOffset
+    
+    
     lowestOffset = property(_getLowestOffset, doc='''
         Get the start time of the Element with the lowest offset in the Stream.
-
-
 
         >>> stream1 = stream.Stream()
         >>> for x in range(3,5):
@@ -7050,11 +6917,9 @@ class Stream(base.Music21Object):
 
         If the Stream is empty, then the lowest offset is 0.0:
 
-
         >>> stream2 = stream.Stream()
         >>> stream2.lowestOffset
         0.0
-
         ''')
 
     def _getDuration(self):
@@ -8605,7 +8470,7 @@ class Stream(base.Music21Object):
         findConsecutiveNotes don't have to remove
         their own args; this method is used in melodicIntervals.)
         '''
-        sortedSelf = self.sorted
+        sortedSelf = self #.sorted
         returnList = []
         lastStart = 0.0
         lastEnd = 0.0
@@ -8862,7 +8727,6 @@ class Stream(base.Music21Object):
 
 
         '''
-        flatStream = flatStream.sorted
         # these may not be sorted
         durSpanSorted = self._getDurSpan(flatStream)
 
@@ -8900,8 +8764,6 @@ class Stream(base.Music21Object):
         index values that meet a given condition (overlap or simultaneities),
         organize into a dictionary by the relevant or first offset
         '''
-        flatStream = flatStream.sorted
-
         if len(layeringMap) != len(flatStream):
             raise StreamException('layeringMap must be the same length as flatStream')
 
@@ -8973,7 +8835,7 @@ class Stream(base.Music21Object):
         if 'GapStream' in self._cache and self._cache["GapStream"] is not None:
             return self._cache["GapStream"]
 
-        sortedElements = self.sorted.elements
+        sortedElements = self.elements
         gapStream = self.__class__()
         highestCurrentEndTime = 0.0
         for e in sortedElements:
@@ -9032,7 +8894,7 @@ class Stream(base.Music21Object):
         True
         '''
 #        checkOverlap = False
-        elementsSorted = self.flat.sorted
+        elementsSorted = self.flat
         simultaneityMap, unused_overlapMap = self._findLayering(elementsSorted,
                                                                 includeDurationless)
 
@@ -9098,7 +8960,7 @@ class Stream(base.Music21Object):
         7
 
         '''
-        elementsSorted = self.flat.sorted
+        elementsSorted = self.flat
         unused_simultaneityMap, overlapMap = self._findLayering(elementsSorted,
                                                                 includeDurationless, includeEndBoundary)
         #environLocal.printDebug(['simultaneityMap map', simultaneityMap])
@@ -9127,7 +8989,7 @@ class Stream(base.Music21Object):
         TODO: check that co-incident boundaries are properly handled
 
         '''
-        elementsSorted = self.flat.sorted
+        elementsSorted = self.flat
         unused_simultaneityMap, overlapMap = self._findLayering(elementsSorted,
                                                                 includeDurationless, includeEndBoundary)
         post = True
@@ -9458,9 +9320,6 @@ class Stream(base.Music21Object):
             returnObj = copy.deepcopy(self)
         else:
             returnObj = self
-        # must be sorted
-        if not returnObj.isSorted:
-            returnObj.sort()
         olDict = returnObj.notes.getOverlaps(
                  includeDurationless=False, includeEndBoundary=False)
         #environLocal.printDebug(['makeVoices(): olDict', olDict])

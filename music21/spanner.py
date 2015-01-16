@@ -412,7 +412,7 @@ class Spanner(base.Music21Object):
 #             post.append(objRef)
 
         # return raw elements list for speed; attached to a temporary stream
-        return postStream._elements
+        return postStream._elements[:]
 
     def getSpannedElementIds(self):
         '''Return all id() for all stored objects.

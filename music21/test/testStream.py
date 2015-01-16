@@ -304,11 +304,8 @@ class Test(unittest.TestCase):
         s = Stream()
         s.repeatInsert(note.Note("C#"), [0.0, 2.0, 4.0])
         s.repeatInsert(note.Note("D-"), [1.0, 3.0, 5.0])
-        self.assertFalse(s.isSorted)
-        y = s.sorted
-        self.assertTrue(y.isSorted)
         g = ""
-        for myElement in y:
+        for myElement in s:
             g += "%s: %s; " % (myElement.offset, myElement.name)
         self.assertEqual(g, '0.0: C#; 1.0: D-; 2.0: C#; 3.0: D-; 4.0: C#; 5.0: D-; ')
 
@@ -401,8 +398,8 @@ class Test(unittest.TestCase):
         n1 = note.Note()
         st2.insert(10, n1)
         st1.insert(12, st2)
-        self.assertTrue(st1.flat.sorted[0] is n1)
-        self.assertEqual(st1.flat.sorted[0].offset, 22.0)
+        self.assertTrue(st1.flat[0] is n1)
+        self.assertEqual(st1.flat[0].offset, 22.0)
         
     def testStreamRecursion(self):
         srcStream = Stream()
@@ -428,7 +425,7 @@ class Test(unittest.TestCase):
         #environLocal.printDebug(['pre flat of mid stream'])
         self.assertEqual(len(midStream.flat), 24)
 #        self.assertEqual(len(midStream.getOverlaps()), 0)
-        mfs = midStream.flat.sorted
+        mfs = midStream.flat
         self.assertEqual(mfs[7].sites.getOffsetBySite(mfs), 11.0)
 
         farStream = Stream()
@@ -470,7 +467,7 @@ class Test(unittest.TestCase):
         
         # get just offset times
         # elementsSorted returns offset, dur, element
-        fsfs = farStream.flat.sorted
+        fsfs = farStream.flat
         offsets = [a.offset for a in fsfs]  # safer is a.getOffsetBySite(fsfs)
         offsetsBrief = offsets[:20]
         self.assertEquals(offsetsBrief, [0, 2, 4, 5, 6, 7, 9, 10, 11, 12, 13, 14, 15, 15, 16, 17, 17, 18, 19, 19])
@@ -881,38 +878,37 @@ class Test(unittest.TestCase):
             counter += 1
 
 
-    def testGetTimeSignatures(self):
-        #getTimeSignatures
-
-        n = note.Note()        
-        n.quarterLength = 3
-        a = Stream()
-        a.autoSort = False
-        a.insert( 0, meter.TimeSignature("5/4")  )
-        a.insert(10, meter.TimeSignature("2/4")  )
-        a.insert( 3, meter.TimeSignature("3/16") )
-        a.insert(20, meter.TimeSignature("9/8")  )
-        a.insert(40, meter.TimeSignature("10/4") )
-
-        offsets = [x.offset for x in a]
-        self.assertEqual(offsets, [0.0, 10.0, 3.0, 20.0, 40.0])
-
-        # fill with notes
-        a.repeatInsert(n, list(range(0,120,3)))
-
-        b = a.getTimeSignatures(sortByCreationTime=False)
-
-        self.assertEqual(len(b), 5)
-        self.assertEqual(b[0].numerator, 5)
-        self.assertEqual(b[4].numerator, 10)
-
-        self.assertEqual(b[4].activeSite, b)
-
-        # none of the offsets are being copied 
-        offsets = [x.offset for x in b]
-        # with autoSort is passed on from elements search
-        #self.assertEqual(offsets, [0.0, 3.0, 10.0, 20.0, 40.0])
-        self.assertEqual(offsets, [0.0, 10.0, 3.0, 20.0, 40.0])
+#     def testGetTimeSignatures(self):
+#         #getTimeSignatures
+# 
+#         n = note.Note()        
+#         n.quarterLength = 3
+#         a = Stream()
+#         a.insert( 0, meter.TimeSignature("5/4")  )
+#         a.insert(10, meter.TimeSignature("2/4")  )
+#         a.insert( 3, meter.TimeSignature("3/16") )
+#         a.insert(20, meter.TimeSignature("9/8")  )
+#         a.insert(40, meter.TimeSignature("10/4") )
+# 
+#         offsets = [x.offset for x in a]
+#         self.assertEqual(offsets, [0.0, 10.0, 3.0, 20.0, 40.0])
+# 
+#         # fill with notes
+#         a.repeatInsert(n, list(range(0,120,3)))
+# 
+#         b = a.getTimeSignatures(sortByCreationTime=False)
+# 
+#         self.assertEqual(len(b), 5)
+#         self.assertEqual(b[0].numerator, 5)
+#         self.assertEqual(b[4].numerator, 10)
+# 
+#         self.assertEqual(b[4].activeSite, b)
+# 
+#         # none of the offsets are being copied 
+#         offsets = [x.offset for x in b]
+#         # with autoSort is passed on from elements search
+#         #self.assertEqual(offsets, [0.0, 3.0, 10.0, 20.0, 40.0])
+#         self.assertEqual(offsets, [0.0, 10.0, 3.0, 20.0, 40.0])
 
 
   
@@ -1790,15 +1786,12 @@ class Test(unittest.TestCase):
         m1.insert(2, note.Note())
         m2 = stream.Measure()
         m2.insert(1, note.Note())
-        self.assertEqual(m2.isSorted, True)
 
         s.insert(0, m1)
         s.insert(4, m2)
         # must connect Measures to Streams before filling gaps
         m1.makeRests(fillGaps=True, timeRangeFromBarDuration=True)
         m2.makeRests(fillGaps=True, timeRangeFromBarDuration=True)
-        self.assertEqual(m2.isSorted, True)
-        #m2.sort()
 
         match = str([(n.offset, n, n.duration) for n in m2.flat.notesAndRests])
         self.assertEqual(match, '[(0.0, <music21.note.Rest rest>, <music21.duration.Duration 1.0>), (1.0, <music21.note.Note C>, <music21.duration.Duration 1.0>), (2.0, <music21.note.Rest rest>, <music21.duration.Duration 2.0>)]')
@@ -2846,8 +2839,20 @@ class Test(unittest.TestCase):
 #         self.assertEqual(n2.offset, 3.5)
 #         self.assertAlmostEqual(m.barDurationProportion(), 1.0, 4)
 
-
     def testInsertAndShiftBasic(self):
+        offsets = [0, 2, 4]
+        n = note.Note()
+        n.quarterLength = 2
+        s = Stream()
+        s.repeatInsert(n, offsets)
+        self.assertEqual(s.highestOffset, 4.0)
+        self.assertEqual(s.highestTime, 6.0)
+        n2 = note.Note()
+        s.insertAndShift(0.0, n2)
+        self.assertEqual(s.highestOffset, 5.0)
+        self.assertEqual(s.highestTime, 7.0)
+
+    def testInsertAndShiftLessBasic(self):
         offsets = [0, 2, 4, 6, 8, 10, 12]
         n = note.Note()
         n.quarterLength = 2
@@ -2884,8 +2889,10 @@ class Test(unittest.TestCase):
             nAlter = note.Note()
             nAlter.quarterLength = qL
             sProc.insertAndShift(insertOffset, nAlter)
-            sProc.elements = sProc.sorted.elements
-            self.assertEqual(sProc.highestOffset, newHighOffset)
+            #sProc.elements = sProc.elements
+            self.assertEqual(sProc.highestOffset, newHighOffset, 
+                             "Value {} not equal {} after shift of {}".format(
+                                    sProc.highestOffset, newHighOffset, nAlter.quarterLength) )
             self.assertEqual(sProc.highestTime, newHighTime)
             self.assertEqual(len(sProc), len(s)+1)
 
@@ -2899,7 +2906,6 @@ class Test(unittest.TestCase):
             nAlter = note.Note()
             nAlter.quarterLength = qL
             sProc.insertAndShift(insertOffset, nAlter)
-            sProc.elements = sProc.sorted.elements
             self.assertEqual(sProc.highestOffset, newHighOffset)
             self.assertEqual(sProc.highestTime, newHighTime)
             self.assertEqual(len(sProc), len(s)+1)
@@ -2930,7 +2936,6 @@ class Test(unittest.TestCase):
 
             c = clef.Clef()
             sProc.insertAndShift(insertOffset, c)
-            #sProc.elements = sProc.sorted.elements
             self.assertEqual(sProc.highestOffset, newHighOffset)
             self.assertEqual(sProc.highestTime, newHighTime)
             self.assertEqual(len(sProc), len(s)+1)
@@ -2984,7 +2989,6 @@ class Test(unittest.TestCase):
             #environLocal.printDebug(['itemList', itemList])            
 
             sProc.insertAndShift(itemList)
-            sProc.elements = sProc.sorted.elements
             self.assertEqual(sProc.highestOffset, newHighOffset)
             self.assertEqual(sProc.highestTime, newHighTime)
             self.assertEqual(len(sProc), len(s)+len(itemList) / 2)
@@ -3871,120 +3875,6 @@ class Test(unittest.TestCase):
         self.assertEqual(str(sSub.pitches), "[<music21.pitch.Pitch E4>, <music21.pitch.Pitch F4>]")
         #sSub.show()
         
-
-
-    def testSortAndAutoSort(self):
-        s = Stream()
-        s.autoSort = False
-
-        n1 = note.Note('A')
-        n2 = note.Note('B')
-
-        s.insert(100, n2) # add  'b' first
-        s.insert(0, n1) # now n1 has a higher index than n2
-
-        self.assertEqual([x.name for x in s], ['B', 'A'])
-        # try getting sorted
-        sSorted = s.sorted
-        # original unchanged
-        self.assertEqual([x.name for x in s], ['B', 'A'])
-        # new is chnaged
-        self.assertEqual([x.name for x in sSorted], ['A', 'B'])
-        # sort in place
-        s.sort()
-        self.assertEqual([x.name for x in s], ['A', 'B'])
-
-
-        # test getElements sorting through .notesAndRests w/ autoSort
-        s = Stream()
-        s.autoSort = True
-        n1 = note.Note('A')
-        n2 = note.Note('B')
-        s.insert(100, n2) # add  'b' first
-        s.insert(0, n1) # now n1 (A) has a higher index than n2 (B)
-        # if we get .notesAndRests, we are getting elements by class, and thus getting 
-        # sorted version
-        self.assertEqual([x.name for x in s.notesAndRests], ['A', 'B'])
-
-        # test getElements sorting through .notesAndRests w/o autoSort
-        s = Stream()
-        s.autoSort = False
-        n1 = note.Note('a')
-        n2 = note.Note('b')
-        s.insert(100, n2) # add  'b' first
-        s.insert(0, n1) # now n1 (A) has a higher index than n2 (B)
-        self.assertEqual([x.name for x in s.notesAndRests], ['B', 'A'])
-
-
-        # test __getitem__ calls w/ autoSort
-        s = Stream()
-        s.autoSort = False
-        n1 = note.Note('A')
-        n2 = note.Note('B')
-        s.insert(100, n2) # add  'b' first
-        s.insert(0, n1) # now n1 (A) has a higher index than n2 (B)
-        self.assertEqual(s[0].name, 'B')
-        self.assertEqual(s[1].name, 'A')
-
-        # test __getitem__ calls w autoSort
-        s = Stream()
-        s.autoSort = True
-        n1 = note.Note('a')
-        n2 = note.Note('b')
-        s.insert(100, n2) # add  'b' first
-        s.insert(0, n1) # now n1 (A) has a higher index than n2 (B)
-        self.assertEqual(s[0].name, 'A')
-        self.assertEqual(s[1].name, 'B')
-
-
-        # test .elements calls w/ autoSort
-        s = Stream()
-        s.autoSort = False
-        n1 = note.Note('a')
-        n2 = note.Note('b')
-        s.insert(100, n2) # add  'b' first
-        s.insert(0, n1) # now n1 (A) has a higher index than n2 (B)
-        self.assertEqual(s.elements[0].name, 'B')
-        self.assertEqual(s.elements[1].name, 'A')
-
-        # test .elements calls w autoSort
-        s = Stream()
-        s.autoSort = True
-        n1 = note.Note('a')
-        n2 = note.Note('b')
-        s.insert(100, n2) # add  'b' first
-        s.insert(0, n1) # now n1 (A) has a higher index than n2 (B)
-        self.assertEqual(s.elements[0].name, 'A')
-        self.assertEqual(s.elements[1].name, 'B')
-
-
-        # test possible problematic casses of overlapping parts
-        # store start time, dur
-        pairs = [(20, 2), (15, 10), (22,1), (10, 2), (5, 25), (8, 10), (0, 2), (0, 30)]
-        
-        # with autoSort false
-        s = Stream()
-        s.autoSort = False
-        for o, d in pairs:
-            n = note.Note()
-            n.quarterLength = d
-            s.insert(o, n)
-        match = []
-        for n in s.notesAndRests:
-            match.append((n.offset, n.quarterLength))
-        self.assertEqual(pairs, match)
-        
-        # with autoSort True
-        s = Stream()
-        s.autoSort = True
-        for o, d in pairs:
-            n = note.Note()
-            n.quarterLength = d
-            s.insert(o, n)
-        match = []
-        for n in s.notesAndRests:
-            match.append((n.offset, n.quarterLength))
-        self.assertEqual([(0.0, 2), (0.0, 30), (5.0, 25), (8.0, 10), (10.0, 2), (15.0, 10), (20.0, 2), (22.0, 1.0)], match)
 
 
     def testMakeChordsBuiltA(self):
@@ -5628,7 +5518,6 @@ class Test(unittest.TestCase):
 
         sMeasuresTwoFour = sSrc.makeMeasures()
         self.assertEqual(str(sMeasuresTwoFour[0].timeSignature), '<music21.meter.TimeSignature 2/4>')
-        self.assertEqual(sMeasuresTwoFour.isSorted, True)
         
         # check how many time signature we have:
         # we should have 1
@@ -7425,8 +7314,8 @@ if __name__ == "__main__":
     import music21
     #'testContextNestedC'
     #'testContextNestedD'
-    #import sys
-    #sys.argv.append('testMakeNotationByMeasuresA')
+    import sys
+    sys.argv.append('testInsertAndShiftBasic')
     music21.mainTest(Test)
 
 

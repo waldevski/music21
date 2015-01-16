@@ -175,7 +175,7 @@ def listOfTimespanTreesByClass(
             trees.TimespanTree(source=lastParentage) for _ in classLists
             ]
     # do this to avoid munging activeSites
-    inputStreamElements = inputStream._elements + inputStream._endElements
+    inputStreamElements = inputStream._elements[:] + inputStream._endElements
     for element in inputStreamElements:
         offset = element.getOffsetBySite(lastParentage) + initialOffset
         wasStream = False

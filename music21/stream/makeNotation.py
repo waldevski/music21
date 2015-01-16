@@ -21,7 +21,7 @@ from music21 import duration
 from music21 import environment
 from music21 import meter
 from music21 import note
-
+from music21 import timespans
 from music21.common import opFrac
 
 environLocal = environment.Environment(__file__)
@@ -349,7 +349,7 @@ def makeMeasures(
     else:
         #environLocal.printDebug(['make measures found no voices'])
         # take flat and sorted version
-        srcObj = copy.deepcopy(s.flat.sorted)
+        srcObj = copy.deepcopy(s.flat)
         voiceCount = 0
 
     #environLocal.printDebug([
@@ -567,10 +567,10 @@ def makeMeasures(
         return post  # returns a new stream populated w/ new measure streams
     else:  # clear the stored elements list of this Stream and repopulate
         # with Measures created above
-        s._elements = []
+        s._elements = timespans.trees.ElementTree(source=s)
         s._endElements = []
         s._elementsChanged()
-        for e in post.sorted:
+        for e in post:
             # may need to handle spanners; already have s as site
             s.insert(e.getOffsetBySite(post), e)
 
@@ -751,11 +751,6 @@ def makeRests(s, refStreamOrTimeRange=None, fillGaps=False,
                     v._insertCore(e.offset, r)
         v._elementsChanged()
         #environLocal.printDebug(['post makeRests show()', v])
-        # NOTE: this sorting has been found to be necessary, as otherwise
-        # the resulting Stream is not sorted and does not get sorted in
-        # preparing musicxml output
-        if v.autoSort:
-            v.sort()
 
     # with auto sort no longer necessary.
 
