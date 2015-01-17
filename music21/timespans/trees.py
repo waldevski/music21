@@ -919,15 +919,17 @@ class ElementTree(AVLTree):
             endingOffset = INFINITY
         if updateParents:
             initialOffset = self.offset
-        
-        node = self._getNodeAfter(startingOffset)
-        nodeList = []
-        while node is not None and node.offset < endingOffset:
-            newOffset = node.offset
-            nodeList.append(node)
-            node = self._getNodeAfter(newOffset)
-        for n in nodeList:
-            n.offset += amountToShift
+            
+        raise TimespanTreeException("This was a dumb idea; rewrite without ever changing a node's offset...")
+#         
+#         node = self._getNodeAfter(startingOffset)
+#         nodeList = []
+#         while node is not None and node.offset < endingOffset:
+#             newOffset = node.offset
+#             nodeList.append(node)
+#             node = self._getNodeAfter(newOffset)
+#         for n in nodeList:
+#             n.offset += amountToShift
 
         self._updateIndices(self.rootNode)
         self._updateEndTimes(self.rootNode)
